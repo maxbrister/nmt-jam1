@@ -38,6 +38,9 @@ class World(DirectObject):
     #define positional variables
     self.nx = 0.0
     self.ny = 0.0
+	
+	#define a current target position
+    self.target = (0,0,0)
 
 	#initialize a camera
     base.disableMouse()                          #Disble mouse camera control
@@ -63,12 +66,18 @@ class World(DirectObject):
 
 	#make some stars
     starIndex = self.makeStars(10, 5)
+	
+	#make some ships (this is a test function, and should be replaced by our real ship-spawning code ASAP)
+    self.selected = starIndex = self.testShips(5, 2)
 
     #This will represent the index of the currently highlited square
     self.hiSq = False
 
     #Start the task that handles the picking
     self.mouseTask = taskMgr.add(self.mouseTask, 'mouseTask')
+
+	#Start the task that handles the picking
+    self.moveShipsTask = taskMgr.add(self.moveShipsTask, 'moveShipsTask')
 	
     # Define procedures to move the camera.
   def moveForward(self):
@@ -124,8 +133,15 @@ class World(DirectObject):
         #Set the highlight on the picked square
         self.starEntities[i].setColor(HIGHLIGHT)
         self.hiSq = i
-    return Task.cont
+        self.highlighted = (self.starEntities[i].getX(), self.starEntities[i].getY(), self.starEntities[i].getZ())
 	
+	#allow the user to input a destination
+    self.accept("mouse1", self.updateTarget)
+		
+    return Task.cont
+  def updateTarget(self):
+    self.target = self.highlighted
+  
   def makeStars(self, number, dist):
     self.stars = render.attachNewNode("starnode")
     self.starEntities = [None for i in range(number)]
@@ -140,9 +156,51 @@ class World(DirectObject):
       t1 = loader.loadTexture("sprites/star1.png")
       t2 = TextureStage("sprites/star1.png")
       self.starEntities[i].setTexture(t2, t1)	
+      self.starEntities[i].setScale(2,2,2)	
       self.starEntities[i].setTransparency(1) 	  
     return self.starEntities
-         
+
+  def testShips(self, number, dist):
+    self.ships = render.attachNewNode("shipnode")
+    self.shipEntities = [None for i in range(number)]
+    for i in range(number):
+      #Load, parent, color, and position the model (a single square polygon)
+      self.shipEntities[i] = loader.loadModel("models/square")
+      self.shipEntities[i].reparentTo(self.stars)
+      self.shipEntities[i].setPos(starPos(dist))
+      self.shipEntities[i].setColor(WHITE)
+      self.shipEntities[i].find("**/polygon").node().setIntoCollideMask(BitMask32.bit(1))
+      self.shipEntities[i].find("**/polygon").node().setTag('square', str(i))
+      t1 = loader.loadTexture("sprites/progart.png")
+      t2 = TextureStage("sprites/star1.png")
+      self.shipEntities[i].setTexture(t2, t1)
+      self.shipEntities[i].setScale(0.3,0.3,0.3)		  
+      self.shipEntities[i].setTransparency(1) 	  
+    return self.shipEntities
+
+  def moveShipsTask(self, task):
+    for i, ship in enumerate(self.selected):
+      x = ship.getX()
+      y = ship.getY()
+      z = ship.getZ()
+      nx = self.target[0] + i/10.0
+      ny = self.target[1] 
+      nz = self.target[2]
+	  
+      print nx, ny, nz
+      print x, y, z
+	  
+      if x > nx: x -= 0.1
+      if x < nx: x += 0.1	 
+      if y > ny: y -= 0.1
+      if y < ny: y += 0.1
+      if z > nz: z -= 0.1
+      if z < nz: z += 0.1	  
+      ship.setPos(x,y,z)
+    return Task.cont
+
+
+	
 #Do the main initialization and start 3D rendering
 w = World()
 run()
