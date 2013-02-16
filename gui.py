@@ -26,7 +26,7 @@ def toOrient(o):
         return 1
     if o == 'center':
         return .5
-    return int(o)
+    return float(o)
 
 def _allSame(v):
     if len(v) <= 1:
@@ -62,6 +62,7 @@ class PropertySet(object):
     @property
     def parent(self):
         return self._parent
+
 
     @parent.setter
     def parent(self, p):
@@ -199,6 +200,7 @@ class Component(PropertySet):
         self.addRectProperty('padding', 0, float)
         self.addRectProperty('border', 0, float)
         self.addProperty('borderColor', '#000000', toColor)
+        self.addProperty('backgroundColor', '#00000000', toColor)
         self.addProperty('horizontalAlign', 'left', toOrient)
         self.addProperty('verticalAlign', 'right', toOrient)
 
@@ -232,23 +234,32 @@ class Component(PropertySet):
         size -= Vec2(*margin[2:])
 
         # draw the border
-        ctx.save()
-        ctx.set_source_rgba(*self['borderColor'])
         if _allSame(border):
             border = border[0]
             if border > 0:
+                ctx.save()
+                ctx.set_source_rgba(*self['borderColor'])
                 ctx.set_line_width(border)
-                ctx.rectangle(0, 0, size[0], size[1])
+                ctx.rectangle(border/2, border/2, size[0] - border, size[1] - border)
+                ctx.stroke()
+                    
+                ctx.restore()
                 ctx.translate(border, border)
                 size -= Vec2(border, border) * 2
         else:
             raise Exception('Not supported yet')
-        ctx.restore()
+
+        bgc = self['backgroundColor']
+        if bgc[-1]:
+            ctx.set_source_rgba(*bgc)
+            ctx.rectangle(0, 0, *size)
+            ctx.fill()
 
         # take into account the padding
+        ctx.translate(*padding[:2])
         size -= Vec2(*padding[:2])
-        size -= Vec2(*padding[:2])
-
+        size -= Vec2(*padding[2:])
+            
         self._renderContent(size)
         
         ctx.restore()
@@ -347,14 +358,16 @@ class Box(Container):
     def _updateLayout(self, size):
         pos = [0, 0]
         spacing = self['spacing']
-        for c in self._children:
+        for idx, c in enumerate(self._children):
             c.size = c.computeSize()
             c.position = list(pos)
             diff = size[self._idx1] - c.size[self._idx1]
             if diff > 0:
                 c.position[self._idx1] += self._orient1 * diff
                             
-            pos[self._idx0] += pos[self._idx0] + spacing
+            pos[self._idx0] += c.size[self._idx0]
+            if idx+1 < len(self._children):
+                pos[self._idx0] += spacing
 
         diff = size[self._idx0] - pos[self._idx0]
         if diff > 0:
@@ -412,6 +425,7 @@ class Manager(Box):
         ctx.paint()
         ctx.restore()
 
+        ctx.set_line_width(0)
         super(Manager, self).render(self._size)
 
         self._buffer.setData(self._surface.get_data())
@@ -448,7 +462,7 @@ class Text(Component):
         self.addProperty('text', '', str)
         self.addProperty('fontSize', 16, int, defaultInherit=True)
         self.addProperty('fontName', 'Sans', str)
-        self.addProperty('fontColor', '#00FF00', toColor, defaultInherit=True)
+        self.addProperty('fontColor', '#000000', toColor, defaultInherit=True)
         self._layout = None
 
         self.text = text
@@ -481,7 +495,7 @@ class Text(Component):
         return self._layout
 
     def _renderContent(self, size):
-        self._context.set_source_rgb(1, 0, 0)
+        self._context.set_source_rgba(*self['fontColor'])
         layout = self._genLayout()
         self._pangoContext.show_layout(layout)
 
@@ -634,9 +648,16 @@ if __name__ == '__main__':
     import direct.directbase.DirectStart
 
     base.win.setClearColorActive(True)
-    base.win.setClearColor(VBase4(0, 0, 1, 1))
+    base.win.setClearColor(VBase4(0, 0, 0, 1))
     mgr = Manager()
+    mgr['horizontalAlign'] = .5
 
     txt = Text('Hello World!')
     txt.parent = mgr
+    txt['backgroundColor'] = '#000000'
+    txt['padding'] = 5
+    txt['border'] = 5
+    txt['fontColor'] = '#008000'
+    txt['borderColor'] = '#008000'
+    txt['fontSize'] = 32
     run()
