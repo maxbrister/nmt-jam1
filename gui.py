@@ -183,8 +183,8 @@ class PropertySet(object):
                 self._updateInherit(nm, None)
 
 class Component(PropertySet):
-    def __init__(self, id = '', parent = None):
-        super(Component, self).__init__(id, parent)
+    def __init__(self, id=''):
+        super(Component, self).__init__(id)
 
         self._context = None
         self._pangoContext = None
@@ -284,8 +284,8 @@ class Component(PropertySet):
         pass
 
 class Container(Component):
-    def __init__(self, id = '', parent = None):
-        super(Container, self).__init__(id, parent)
+    def __init__(self, id = ''):
+        super(Container, self).__init__(id)
 
     def addChild(self, c):
         c.parent = self
@@ -310,8 +310,8 @@ class Container(Component):
             ctx.restore()
 
 class Box(Container):
-    def __init__(self, id = '', parent = None):
-        super(Box, self).__init__(id, parent)
+    def __init__(self, id = ''):
+        super(Box, self).__init__(id)
         self.addProperty('orientation', 'horizontal')
         self.addProperty('spacing', 5, int)
         self.addProperty('verticalAlign', 'center', toOrient)
@@ -363,50 +363,13 @@ class Box(Container):
                 c.position[self._idx0] += offset
 
 class HBox(Box):
-    def __init__(self, id = '', parent = None):
-        super(HBox, self).__init__(id, parent)
+    def __init__(self, id = ''):
+        super(HBox, self).__init__(id)
 
 class VBox(Box):
-    def __init__(self, id = '', parent = None):
-        super(VBox, self).__init__(id, parent)
+    def __init__(self, id = ''):
+        super(VBox, self).__init__(id)
         self.getProperty('orientation').defaultValue = 'vertical'
-
-class Text(Component):
-    def __init__(self, id = '', parent = None):
-        super(Text, self).__init__(id, parent)
-        self.addProperty('text', '', str)
-        self.addProperty('fontSize', 16, int, defaultInherit=True)
-        self.addProperty('fontName', 'Sans', str)
-        self.addProperty('fontColor', '#00FF00', toColor, defaultInherit=True)
-        self._layout = None
-
-    def _computeContentSize(self):
-        layout = self._genLayout()
-        return [s / pango.SCALE for s in layout.get_size()]
-
-    def _genLayout(self):
-        pctx = self._pangoContext
-        if self._layout is None:
-            self._layout = pctx.create_layout()
-            self._layout.set_width(-1)
-
-        font = pango.FontDescription('{0} {1}'.format(self['fontName'], self['fontSize']))
-        self._layout.set_font_description(font)
-
-        if self._layout.get_text() != self['text']:
-            self._layout.set_text(self['text'])
-            pctx.update_layout(self._layout)
-            
-        return self._layout
-
-    def _renderContent(self, size):
-        self._context.set_source_rgb(1, 0, 0)
-        layout = self._genLayout()
-        self._pangoContext.show_layout(layout)
-
-    def _updateContext(self, context, pangoContext):
-        self._layout = None
-        super(Text, self)._updateContext(context, pangoContext)
 
 class Manager(Box):
     def __init__(self, visible=True):
@@ -478,6 +441,53 @@ class Manager(Box):
         self._updateContext(context, pangoContext)
         self._updateLayout(size)
         return size
+
+class Text(Component):
+    def __init__(self, text = '', id = ''):
+        super(Text, self).__init__(id)
+        self.addProperty('text', '', str)
+        self.addProperty('fontSize', 16, int, defaultInherit=True)
+        self.addProperty('fontName', 'Sans', str)
+        self.addProperty('fontColor', '#00FF00', toColor, defaultInherit=True)
+        self._layout = None
+
+        self.text = text
+
+    @property
+    def text(self):
+        return self['text']
+
+    @text.setter
+    def text(self, txt):
+        self['text'] = txt
+
+    def _computeContentSize(self):
+        layout = self._genLayout()
+        return [s / pango.SCALE for s in layout.get_size()]
+
+    def _genLayout(self):
+        pctx = self._pangoContext
+        if self._layout is None:
+            self._layout = pctx.create_layout()
+            self._layout.set_width(-1)
+
+        font = pango.FontDescription('{0} {1}'.format(self['fontName'], self['fontSize']))
+        self._layout.set_font_description(font)
+
+        if self._layout.get_text() != self['text']:
+            self._layout.set_text(self['text'])
+            pctx.update_layout(self._layout)
+            
+        return self._layout
+
+    def _renderContent(self, size):
+        self._context.set_source_rgb(1, 0, 0)
+        layout = self._genLayout()
+        self._pangoContext.show_layout(layout)
+
+    def _updateContext(self, context, pangoContext):
+        self._layout = None
+        super(Text, self)._updateContext(context, pangoContext)
 
 class _FakeProperty(object):
     def __init__(self, ps, name, props):
@@ -627,7 +637,6 @@ if __name__ == '__main__':
     base.win.setClearColor(VBase4(0, 0, 1, 1))
     mgr = Manager()
 
-    txt = Text()
-    txt['text'] = 'hello world'
+    txt = Text('Hello World!')
     txt.parent = mgr
     run()
