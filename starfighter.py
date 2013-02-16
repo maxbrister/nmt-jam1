@@ -6,133 +6,144 @@ from pandac.PandaModules import *
 from panda3d.core import Texture, TextureStage
 from pandac.PandaModules import TransparencyAttrib 
 from direct.gui.OnscreenImage import OnscreenImage
-from random import *
+import direct.directbase.DirectStart
+from panda3d.core import CollisionTraverser,CollisionNode
+from panda3d.core import CollisionHandlerQueue,CollisionRay
+from panda3d.core import AmbientLight,DirectionalLight,LightAttrib
+from panda3d.core import TextNode
+from panda3d.core import Point3,Vec3,Vec4,BitMask32
+from direct.gui.OnscreenText import OnscreenText
+from direct.showbase.DirectObject import DirectObject
+from direct.task.Task import Task
+from random import * 
+import sys
 
- 
-class Game(ShowBase):
 
-	def __init__(self):
-		ShowBase.__init__(self)
-		#these store your position on the X/Y plane
-		self.nx = 0.0
-		self.ny = 0.0
-		
-		#setup collision detection
-		#Since we are using collision detection to do picking, we set it up like
-		#any other collision detection system with a traverser and a handler
-		self.picker = CollisionTraverser()            #Make a traverser
-		self.pq     = CollisionHandlerQueue()         #Make a handler
-		#Make a collision node for our picker ray
-		self.pickerNode = CollisionNode('mouseRay')
-		#Attach that node to the camera since the ray will need to be positioned
-		#relative to it
-		self.pickerNP = camera.attachNewNode(self.pickerNode)
-		#Everything to be picked will use bit 1. This way if we were doing other
-		#collision we could seperate it
-		self.pickerNode.setFromCollideMask(BitMask32.bit(1))
-		self.pickerRay = CollisionRay()               #Make our ray
-		self.pickerNode.addSolid(self.pickerRay)      #Add it to the collision node
-		#Register the ray as something that can cause collisions
-		self.picker.addCollider(self.pickerNP, self.pq)
-		#self.picker.showCollisions(render)
- 
-        # Add the spinCameraTask procedure to the task manager.
-		self.taskMgr.add(self.moveCameraTask, "MoveCameraTask")
-		base.setBackgroundColor(0.0, 0.0, 0.0)
- 
-        # Load and texture a ship
-		self.testShip = Actor("cube.egg")
-		self.testShip.setScale(0.1, 0.1, 0.01)
-		t1 = loader.loadTexture("sprites/progart.png")
-		t2 = TextureStage("sprites/progart.png")
-		self.testShip.setTexture(t2, t1)	
-		self.testShip.reparentTo(self.render)
-		self.testShip.setPos(0, 0, 6)
-		self.testShip.setTransparency(1) 
+#First we define some contants for the colors
+BLACK = Vec4(0,0,0,1)
+WHITE = Vec4(1,1,1,1)
+HIGHLIGHT = Vec4(0,1,1,1)
 
-		
-		#spawn some stars
-		self.buildStars(5,10)
-		
-		#Add a star plane
-		b=OnscreenImage(parent=render2d, image="sprites/stars.jpg") 
-		base.cam.node().getDisplayRegion(0).setSort(20)
+#Now we define some helper functions that we will need later
 
+def PointAtZ(z, point, vec):
+  return point + vec * ((z-point.getZ()) / vec.getZ())
+
+#A handy little function for getting the proper position for a given square
+def starPos(dist):
+  return random()*dist, random()*dist, random()*dist
+
+class World(DirectObject):
+  def __init__(self):
+    #define positional variables
+    self.nx = 0.0
+    self.ny = 0.0
+
+	#initialize a camera
+    base.disableMouse()                          #Disble mouse camera control
+    base.camera.setPosHpr(0, -13.75, 6, 0, -25, 0)    #Set the camera
+
+	#set up mouse picking
+    self.picker = CollisionTraverser()            #Make a traverser
+    self.pq = CollisionHandlerQueue()         #Make a handler
+    self.pickerNode = CollisionNode('mouseRay')
+    self.pickerNP = base.camera.attachNewNode(self.pickerNode)
+    self.pickerNode.setFromCollideMask(BitMask32.bit(1))
+    self.pickerRay = CollisionRay()               #Make our ray
+    self.pickerNode.addSolid(self.pickerRay)      #Add it to the collision node
+    self.picker.addCollider(self.pickerNP, self.pq)
+	
+    #Add a star plane
+    b=OnscreenImage(parent=render2d, image="sprites/stars.jpg") 
+    base.cam.node().getDisplayRegion(0).setSort(20)
+
+    #add a task for moving the camera
+    taskMgr.add(self.moveCameraTask, "MoveCameraTask")
+    base.setBackgroundColor(0.0, 0.0, 0.0)
+
+	#make some stars
+    starIndex = self.makeStars(10, 5)
+
+    #This will represent the index of the currently highlited square
+    self.hiSq = False
+
+    #Start the task that handles the picking
+    self.mouseTask = taskMgr.add(self.mouseTask, 'mouseTask')
+	
     # Define procedures to move the camera.
-	def moveForward(self):
-		self.ny += 0.5
-	def moveBack(self):
-		self.ny -= 0.5
-	def moveRight(self):
-		self.nx += 0.5
-	def moveLeft(self):
-		self.nx -= 0.5
-	#update camera position
-	def moveCameraTask(self, task):
-		#handle key presses
-		self.accept("w", self.moveForward)
-		self.accept("s", self.moveBack)
-		self.accept("d", self.moveRight)
-		self.accept("a", self.moveLeft)
-		#handle continued key press
-		self.accept("w-repeat", self.moveForward)
-		self.accept("s-repeat", self.moveBack)
-		self.accept("d-repeat", self.moveRight)
-		self.accept("a-repeat", self.moveLeft)
-		#accept mouse input
-		self.accept("mouse1", self.pickObject)
+  def moveForward(self):
+     self.ny += 0.5
+  def moveBack(self):
+    self.ny -= 0.5
+  def moveRight(self):
+    self.nx += 0.5
+  def moveLeft(self):
+    self.nx -= 0.5
+  #update camera position
+  def moveCameraTask(self, task):
+    #handle key presses
+    self.accept("w", self.moveForward)
+    self.accept("s", self.moveBack)
+    self.accept("d", self.moveRight)
+    self.accept("a", self.moveLeft)
+    #handle continued key press
+    self.accept("w-repeat", self.moveForward)
+    self.accept("s-repeat", self.moveBack)
+    self.accept("d-repeat", self.moveRight)
+    self.accept("a-repeat", self.moveLeft)
 		
-		self.camera.setPos(self.nx, self.ny, 20)
-		#self.camera.lookAt(self.testShip)
-		self.camera.setHpr(0,-75,0)
-		return Task.cont
-		
-	def pickObject(self):
-		#Check to see if we can access the mouse. We need it to do anything else
-		if base.mouseWatcherNode.hasMouse():
-			#get the mouse position
-			mpos = base.mouseWatcherNode.getMouse()
-		  
-			#Set the position of the ray based on the mouse position
-			self.pickerRay.setFromLens(base.camNode, mpos.getX(), mpos.getY())
-			nearPoint = render.getRelativePoint(camera, self.pickerRay.getOrigin())
-			#Same thing with the direction of the ray
-			nearVec = render.getRelativeVector(camera, self.pickerRay.getDirection())
-		  
-			self.picker.traverse(render)
-			
-			if self.pq.getNumEntries() > 0:
-				#if we have hit something, sort the hits so that the closest
-				#is first, and highlight that node
-				self.pq.sortEntries()
-				i = int(self.pq.getEntry(0).getIntoNode().getTag('pickable'))
-				print i
-				return None
-			print "No objects found!"
-			return None
-     
-		
-	def buildStars(self, number, dist):
-		for i in range(0, number):
-			self.star = Actor("cube.egg")
-			self.star.setScale(1, 1, 0)
-			t1 = loader.loadTexture("sprites/star1.png")
-			t2 = TextureStage("sprites/star1.png")
-			self.star.setTexture(t2, t1)	
-			self.star.reparentTo(self.render)
-			self.star.setPos(random()*dist, random()*dist, random()*dist)
-			self.star.setTransparency(1) 
-			self.star.setTag('pickable', str(i))
-			#self.star.find("**/polygon").node().setIntoCollideMask( BitMask32.bit(1))
+    base.camera.setPos(self.nx, self.ny, 20)
+    #self.camera.lookAt(self.testShip)
+    base.camera.setHpr(0,-75,0)
+    return Task.cont
 
-		
+  def mouseTask(self, task):
+    #This task deals with the highlighting and dragging based on the mouse
+    
+    #First, clear the current highlight
+    if self.hiSq is not False:
+      self.starEntities[self.hiSq].setColor(WHITE)
+      self.hiSq = False
+      
+    #Check to see if we can access the mouse. We need it to do anything else
+    if base.mouseWatcherNode.hasMouse():
+      #get the mouse position
+      mpos = base.mouseWatcherNode.getMouse()
+      
+      #Set the position of the ray based on the mouse position
+      self.pickerRay.setFromLens(base.camNode, mpos.getX(), mpos.getY())
+      
+      #Do the actual collision pass (Do it only on the starEntities for
+      #efficiency purposes)
+      self.picker.traverse(self.stars)
+      if self.pq.getNumEntries() > 0:
+        #if we have hit something, sort the hits so that the closest
+        #is first, and highlight that node
+        self.pq.sortEntries()
+        i = int(self.pq.getEntry(0).getIntoNode().getTag('square'))
+        #Set the highlight on the picked square
+        self.starEntities[i].setColor(HIGHLIGHT)
+        self.hiSq = i
+    return Task.cont
 	
+  def makeStars(self, number, dist):
+    self.stars = render.attachNewNode("starnode")
+    self.starEntities = [None for i in range(number)]
+    for i in range(number):
+      #Load, parent, color, and position the model (a single square polygon)
+      self.starEntities[i] = loader.loadModel("models/square")
+      self.starEntities[i].reparentTo(self.stars)
+      self.starEntities[i].setPos(starPos(dist))
+      self.starEntities[i].setColor(WHITE)
+      self.starEntities[i].find("**/polygon").node().setIntoCollideMask(BitMask32.bit(1))
+      self.starEntities[i].find("**/polygon").node().setTag('square', str(i))
+      t1 = loader.loadTexture("sprites/star1.png")
+      t2 = TextureStage("sprites/star1.png")
+      self.starEntities[i].setTexture(t2, t1)	
+      self.starEntities[i].setTransparency(1) 	  
+    return self.starEntities
+         
+#Do the main initialization and start 3D rendering
+w = World()
+run()
 
-	
-
-
-			
-				
-
-app = Game()
-app.run()
