@@ -33,6 +33,11 @@ def toOrient(o):
         return .5
     return int(o)
 
+def _allSame(v):
+    if len(v) <= 1:
+        return True
+    return all([v[0] == item for item in v])
+
 def _makeList(v, le):
     if isinstance(v, str):
         split = v.split(' ')
@@ -143,7 +148,6 @@ class Component(PropertySet):
     def __init__(self, id = '', parent = None):
         super(Component, self).__init__(id, parent)
 
-        self._pset = PropertySet(parent)
         self.addProperty('width', 0, float)
         self.addProperty('height', 0, float)
         self.addProperty('minWidth', 0, float)
@@ -175,13 +179,15 @@ class Component(PropertySet):
         global context
         margin = self['margin']
         padding = self['padding']
-        border = self['borderSize']
+        border = self['border']
 
         ctx = context
         ctx.save()
         ctx.rectangle(0, 0, *size)
         ctx.clip()
         ctx.translate(*margin[:2])
+
+        size = Vec2(*size)
         size -= Vec2(*margin[:2])
         size -= Vec2(*margin[2:])
 
@@ -206,12 +212,6 @@ class Component(PropertySet):
         self._renderContent(size)
         
         ctx.restore()
-
-    def __getitem__(self, name):
-        return self._pset[name]
-
-    def __setitem__(self, name, v):
-        self._pset[name] = v
 
     def _computeContentSize(self):
         # subclass should override
@@ -311,6 +311,7 @@ class Text(Component):
         super(Text, self).__init__(id, parent)
         self.addProperty('text', '', str)
         self.addProperty('fontSize', 16, int, defaultInherit=True)
+        self.addProperty('fontName', 'Sans', str)
         self.addProperty('fontColor', '#00FF00', toColor, defaultInherit=True)
         self._layout = None
 
@@ -321,16 +322,19 @@ class Text(Component):
     def _genLayout(self):
         if self._layout is None:
             self._layout = pangoContext.create_layout()
-            layout.set_width(-1)
-        self._layout.set_font_description(self._findFont())
+            self._layout.set_width(-1)
 
-        if layout.get_text() != self['text']:
-            layout.set_text(self['text'])
-            pangoContext.update_layout(layout)
+        font = pango.FontDescription(self['fontName'])
+        self._layout.set_font_description(font)
+
+        if self._layout.get_text() != self['text']:
+            self._layout.set_text(self['text'])
+            pangoContext.update_layout(self._layout)
             
         return self._layout
 
     def _renderContent(self, size):
+        context.set_source_rgb(1, 0, 0)
         layout = self._genLayout()
         pangoContext.show_layout(layout)
 
@@ -523,6 +527,7 @@ class _Property(object):
 
     def markDirty(self):
         self._pset._markDirty(self)
+        self._update()
 
     def _update(self):
         if self._value is not None:
@@ -549,5 +554,5 @@ if __name__ == '__main__':
 
     txt = Text()
     txt['text'] = 'hello world'
-    mgr.content = txt    
+    mgr.content = txt
     run()
