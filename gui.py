@@ -55,14 +55,21 @@ class PropertySet(object):
         self._parent = None
         self.parent= parent
         self._props = dict()
-        self._classes = list()
         self._children = list()
         self._listeners = dict()
+
+        self._manualClasses = list()
+        self._autoClasses = list()
+
+        self.types = []
+
+    @property
+    def classes(self):
+        return self._manualClasses + self._autoClasses
 
     @property
     def parent(self):
         return self._parent
-
 
     @parent.setter
     def parent(self, p):
@@ -79,20 +86,8 @@ class PropertySet(object):
             prop.value = v
 
     def addClass(self, cl):
-        self.removeClass(cl)
-        self._classes.append(cl)
-
-        # We must have all properties in the class
-        fakes = list()
-        for pname in cl._props:
-            if pname not in self._props:
-                prop = cl._props[pname]
-                if isinstance(_FakeProperty, prop):
-                    fakes.append(prop)
-                else:
-                    self._props[pname] = cl._props[pname].clone(self)
-        for fake in fakes:
-            self._props[fake.name] = fake.clone(self)
+        self._manualClasses.append(cl)
+        self._updateInheritAll()
 
     def addCompositeProperty(self, name, names, defaultValue=None, convertFn=None, defaultInherit=False):
         defaultValue = _makeList(defaultValue, len(names))
@@ -128,14 +123,17 @@ class PropertySet(object):
             return prop
 
     def removeClass(self, cl):
-        for idx, c in enumerate(self._classes):
-            if c.name == cl.name:
-                del self._classes[idx]
-                break
-        self._markAllDirty()
+        self._manualClasses.remove(cl)
+        self._updateInheritAll()
 
     def removeListener(self, evt, l):
         self._listeners[evt].remove(l)
+
+    def _classValue(self, nm):
+        for c in self.classes:
+            if nm in c.d:
+                return c.d[nm]
+        return None
 
     def _sendEvent(self, evt, oldValue, newValue):
         try:
@@ -160,12 +158,12 @@ class PropertySet(object):
     def _update(self, pname):
         if self.getProperty(pname)._update():
             for c in self._children:
-                c._updateInherit(pname, prop.value)
+                c._updateInherit(pname, prop.value, self._classValue(nm))
 
     def _updateInherit(self, pname, pvalue):
         try:
             prop = self._props[pname]
-            if not prop._updateInherit(pvalue):
+            if not prop._updateInherit(pvalue, self._classValue(pname)):
                 return
             value = prop.value
         except KeyError:
@@ -174,7 +172,7 @@ class PropertySet(object):
         for c in self._children:
             c._updateInherit(pname, value)
 
-    def _updateInheritAll(self):
+    def _updateInheritAll(self):            
         if self._parent:
             for nm in self._parent._props:
                 self._updateInherit(nm, self._parent[nm])
@@ -204,9 +202,21 @@ class Component(PropertySet):
         self.addProperty('horizontalAlign', 'left', toOrient)
         self.addProperty('verticalAlign', 'right', toOrient)
 
+        self._manager = None
         self._sizeValid = False
         self.position = None
         self.size = None
+
+        self.state = ''
+        self.types.append('Component')
+
+    def __getitem__(self, name):
+        prop = self.getProperty(name)
+        if self.state:
+            sname = '{0}#{1}'.format(name, self.state)
+            if self.getProperty(sname).value is not None:
+                return prop._convertFn(self.getProperty(sname).value)
+        return prop.value
 
     def computeSize(self):
         # DO NOT override
@@ -240,7 +250,7 @@ class Component(PropertySet):
                 ctx.save()
                 ctx.set_source_rgba(*self['borderColor'])
                 ctx.set_line_width(border)
-                ctx.rectangle(border/2, border/2, size[0] - border, size[1] - border)
+                ctx.rectangle(border/2.0, border/2.0, size[0] - border, size[1] - border)
                 ctx.stroke()
                     
                 ctx.restore()
@@ -268,11 +278,17 @@ class Component(PropertySet):
         # subclass should override
         return (0, 0)
 
-    def _updateContext(self, ctx, pangoCtx):
+    def _updateContext(self, mgr, ctx, pangoCtx):
+        self._manager = mgr
+        if self._manager:
+            self._autoClasses = [c for c in self._manager.clist if c.matches(self)]
+        else:
+            self._autoClasses = list()
+        self._updateInheritAll()
         self._context = ctx
         self._pangoContext = pangoCtx
         for c in self._children:
-            c._updateContext(ctx, pangoCtx)
+            c._updateContext(mgr, ctx, pangoCtx)
 
     def _invalidateSize(self):
         if self._sizeValid and self.parent is not None:
@@ -286,9 +302,9 @@ class Component(PropertySet):
     def _setParent(self, p):
         if super(Component, self)._setParent(p):
             if p:
-                self._updateContext(p._context, p._pangoContext)
+                self._updateContext(self._manager, p._context, p._pangoContext)
             else:
-                self._updateContext(None, None)
+                self._updateContext(None, None, None)
 
     def _updateLayout(self, size):
         # subclass should override
@@ -327,6 +343,7 @@ class Box(Container):
         self.addProperty('spacing', 5, int)
         self.addProperty('verticalAlign', 'center', toOrient)
         self.addProperty('horizontalAlign', 'center', toOrient)
+        self.types.append('Box')
 
     @property
     def _idx0(self):
@@ -378,11 +395,13 @@ class Box(Container):
 class HBox(Box):
     def __init__(self, id = ''):
         super(HBox, self).__init__(id)
+        self.types.append('HBox')
 
 class VBox(Box):
     def __init__(self, id = ''):
         super(VBox, self).__init__(id)
         self.getProperty('orientation').defaultValue = 'vertical'
+        self.types.append('VBox')
 
 class Manager(Box):
     def __init__(self, visible=True):
@@ -390,7 +409,7 @@ class Manager(Box):
         
         self._size = None
         cm = CardMaker('card')
-        cm.setFrame(-1, 1, 1, -.5)
+        cm.setFrame(-1, 1, 1, -1)
         self._card = render2d.attachNewNode(cm.generate())
         self._card.setAttrib(TransparencyAttrib.make(TransparencyAttrib.MAlpha))
         self._card.hide()
@@ -399,6 +418,7 @@ class Manager(Box):
         self.visible = visible
 
         self.content = None
+        self.clist = list()
 
     @property
     def visible(self):
@@ -415,6 +435,9 @@ class Manager(Box):
                 base.taskMgr.remove(self._task)
                 self._task = None
                 self._card.hide()
+
+    def addClass(self, d, s=''):
+        self.clist.append(PropClass(d, s))
 
     def render(self, task):
         size = self.resize()
@@ -452,10 +475,18 @@ class Manager(Box):
 
         context = cairo.Context(self._surface)
         pangoContext = pangocairo.CairoContext(context)
-        self._updateContext(context, pangoContext)
+        self._updateContext(self, context, pangoContext)
         self._updateLayout(size)
         return size
 
+class PropClass(object):
+    def __init__(self, d, s=''):
+        self.d = d
+        self.s = s
+
+    def matches(self, comp):
+        return self.s in ([comp.id] + comp.types)
+        
 class Text(Component):
     def __init__(self, text = '', id = ''):
         super(Text, self).__init__(id)
@@ -466,6 +497,7 @@ class Text(Component):
         self._layout = None
 
         self.text = text
+        self.types.append('Text')
 
     @property
     def text(self):
@@ -499,9 +531,13 @@ class Text(Component):
         layout = self._genLayout()
         self._pangoContext.show_layout(layout)
 
-    def _updateContext(self, context, pangoContext):
+    def _updateContext(self, mgr, context, pangoContext):
         self._layout = None
-        super(Text, self)._updateContext(context, pangoContext)
+        super(Text, self)._updateContext(mgr, context, pangoContext)
+
+class Button(Text):
+    def __init__(self, text = '', id = ''):
+        super(Button, self).__init__(text, id)
 
 class _FakeProperty(object):
     def __init__(self, ps, name, props):
@@ -551,7 +587,7 @@ class _FakeProperty(object):
     def _update(self):
         return False
 
-    def _updateInherit(self, pvalue):
+    def _updateInherit(self, pvalue, cvalue):
         return False
         
 class _Property(object):
@@ -561,9 +597,10 @@ class _Property(object):
         self._name = name
         self._defaultValue = defaultValue
         self._convertFn = convertFn
-        self._defaultInherit = None
+        self._defaultInherit = defaultInherit
 
         self._inheritValue = None
+        self._classValue = None
         self._value = None
         self._inherit = None
         
@@ -620,6 +657,8 @@ class _Property(object):
     def _update(self):
         if self._value is not None:
             newValue = self._value
+        elif self._classValue is not None:
+            newValue = self._classValue
         elif self.inherit and self._inheritValue is not None:
             newValue = self._inheritValue
         else:
@@ -640,8 +679,9 @@ class _Property(object):
             return True
         return False
 
-    def _updateInherit(self, pvalue):
+    def _updateInherit(self, pvalue, cvalue):
         self._inheritValue = pvalue
+        self._classValue = cvalue
         return self._update()
 
 if __name__ == '__main__':
@@ -650,14 +690,14 @@ if __name__ == '__main__':
     base.win.setClearColorActive(True)
     base.win.setClearColor(VBase4(0, 0, 0, 1))
     mgr = Manager()
-    mgr['horizontalAlign'] = .5
+    mgr['fontColor'] = '#008000'
+
+    mgr.addClass({
+            'backgroundColor': '#000000',
+            'padding': 5,
+            'borderColor': '#008000',
+            }, 'Text')
 
     txt = Text('Hello World!')
     txt.parent = mgr
-    txt['backgroundColor'] = '#000000'
-    txt['padding'] = 5
-    txt['border'] = 5
-    txt['fontColor'] = '#008000'
-    txt['borderColor'] = '#008000'
-    txt['fontSize'] = 32
     run()
