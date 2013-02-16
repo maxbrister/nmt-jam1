@@ -8,7 +8,8 @@ from pandac.PandaModules import TransparencyAttrib
 from direct.gui.OnscreenImage import OnscreenImage
 from random import *
 from panda3d.core import Point3,Vec3,Vec4,BitMask32
-
+from panda3d.core import CollisionTraverser,CollisionNode
+from panda3d.core import CollisionHandlerQueue,CollisionRay
  
 class Game(ShowBase):
 
@@ -19,17 +20,13 @@ class Game(ShowBase):
 		self.ny = 0.0
 		
 		#setup collision detection
-		#Since we are using collision detection to do picking, we set it up like
-		#any other collision detection system with a traverser and a handler
 		self.picker = CollisionTraverser()            #Make a traverser
 		self.pq     = CollisionHandlerQueue()         #Make a handler
 		#Make a collision node for our picker ray
 		self.pickerNode = CollisionNode('mouseRay')
-		#Attach that node to the camera since the ray will need to be positioned
-		#relative to it
+		#Attach that node to the camera
 		self.pickerNP = camera.attachNewNode(self.pickerNode)
 		#Everything to be picked will use bit 1. This way if we were doing other
-		#collision we could seperate it
 		self.pickerNode.setFromCollideMask(BitMask32.bit(1))
 		self.pickerRay = CollisionRay()               #Make our ray
 		self.pickerNode.addSolid(self.pickerRay)      #Add it to the collision node
@@ -112,8 +109,8 @@ class Game(ShowBase):
 		
 	def buildStars(self, number, dist):
 		for i in range(0, number):
-			self.star = Actor("cube.egg")
-			self.star.setScale(1, 1, 0)
+			self.star = loader.loadModel("square")
+			self.star.setScale(2, 2, 2)
 			t1 = loader.loadTexture("sprites/star1.png")
 			t2 = TextureStage("sprites/star1.png")
 			self.star.setTexture(t2, t1)	
@@ -126,6 +123,10 @@ class Game(ShowBase):
 			self.cnodePath = self.star.attachNewNode(CollisionNode('cnode'))
 			self.cnodePath.node().addSolid(cs)
 			self.cnodePath.setTag('pickable', "true")
+			self.star.setTag('pickable', "true")
+			#self.star.addCollider(self.pickerNP, self.pq)
+			#self.cnodePath.addCollider(self.pickerNP, self.pq)
+			self.star.find("**/polygon").node().setTag('square', str(i))
 
 		
 	
