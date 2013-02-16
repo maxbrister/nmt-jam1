@@ -7,6 +7,7 @@ from panda3d.core import Texture, TextureStage
 from pandac.PandaModules import TransparencyAttrib 
 from direct.gui.OnscreenImage import OnscreenImage
 from random import *
+from panda3d.core import Point3,Vec3,Vec4,BitMask32
 
  
 class Game(ShowBase):
@@ -34,7 +35,7 @@ class Game(ShowBase):
 		self.pickerNode.addSolid(self.pickerRay)      #Add it to the collision node
 		#Register the ray as something that can cause collisions
 		self.picker.addCollider(self.pickerNP, self.pq)
-		#self.picker.showCollisions(render)
+		self.picker.showCollisions(render)
  
         # Add the spinCameraTask procedure to the task manager.
 		self.taskMgr.add(self.moveCameraTask, "MoveCameraTask")
@@ -95,13 +96,10 @@ class Game(ShowBase):
 		  
 			#Set the position of the ray based on the mouse position
 			self.pickerRay.setFromLens(base.camNode, mpos.getX(), mpos.getY())
-			nearPoint = render.getRelativePoint(camera, self.pickerRay.getOrigin())
-			#Same thing with the direction of the ray
-			nearVec = render.getRelativeVector(camera, self.pickerRay.getDirection())
-		  
 			self.picker.traverse(render)
 			
 			if self.pq.getNumEntries() > 0:
+				print "found something"
 				#if we have hit something, sort the hits so that the closest
 				#is first, and highlight that node
 				self.pq.sortEntries()
@@ -123,7 +121,11 @@ class Game(ShowBase):
 			self.star.setPos(random()*dist, random()*dist, random()*dist)
 			self.star.setTransparency(1) 
 			self.star.setTag('pickable', str(i))
-			#self.star.find("**/polygon").node().setIntoCollideMask( BitMask32.bit(1))
+			#append collision spheres to each star
+			cs = CollisionSphere(0, 0, 0, 1)
+			self.cnodePath = self.star.attachNewNode(CollisionNode('cnode'))
+			self.cnodePath.node().addSolid(cs)
+			self.cnodePath.setTag('pickable', "true")
 
 		
 	
