@@ -25,7 +25,8 @@ class Picker(DirectObject.DirectObject):
 
       #this holds the object that has been picked 
       self.pickedObj=None 
-
+      self.accept('mouse1', self.printMe) 
+	  
    #this function is meant to flag an object as being somthing we can pick 
    def makePickable(self,newObj): 
       newObj.setTag('pickable','true') 
@@ -40,7 +41,7 @@ class Picker(DirectObject.DirectObject):
          self.pickedObj=self.queue.getEntry(0).getIntoNodePath() 
 
          parent=self.pickedObj.getParent() 
-         self.pickedObj=None 
+         #self.pickedObj=None 
 
          while parent != render: 
             if parent.getTag('pickable')=='true': 
