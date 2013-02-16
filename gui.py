@@ -7,11 +7,6 @@ import re
 
 from panda3d.core import CardMaker, CPTA_uchar, PTA_uchar, Texture, TextureStage, TransformState, VBase2, VBase4, Vec2, TransparencyAttrib, RenderAttrib
 
-
-context = None
-pangoContext = None
-
-
 _COLOR_RE = re.compile('^#([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})?$')
 def toColor(clr):
     try:
@@ -61,6 +56,8 @@ class PropertySet(object):
         self.parent= parent
         self._props = dict()
         self._classes = list()
+        self._children = list()
+        self._listeners = dict()
 
     @property
     def parent(self):
@@ -68,13 +65,7 @@ class PropertySet(object):
 
     @parent.setter
     def parent(self, p):
-        if p != self._parent:
-            if self._parent is not None:
-                self._parent._removeChild(self)
-            self._parent = p
-            self._markAllDirty()
-            if self._parent is not None:
-                self._parent._addChild(self)
+        self._setParent(p)
 
     def __getitem__(self, name):
         return self.getProperty(name).value
@@ -111,10 +102,17 @@ class PropertySet(object):
         self._props[name] = ret
         return ret
 
+    def addListener(self, evt, l):
+        try:
+            self._listeners[evt].append(l)
+        except KeyError:
+            self._listeners[evt] = [l]
+        return l
+
     def addProperty(self, name, defaultValue=None, convertFn=None, defaultInherit=False):
         ret = _Property(self, name, defaultValue, convertFn, defaultInherit)
         self._props[name] = ret
-        self._update(ret)
+        self._updateInherit(name, self._parent[name] if self._parent else None)
         return ret
 
     def addRectProperty(self, name, defaultValue=None, convertFn=None, defaultInherit=False):
@@ -135,18 +133,61 @@ class PropertySet(object):
                 break
         self._markAllDirty()
 
-    def _markAllDirty(self):
-        pass
+    def removeListener(self, evt, l):
+        self._listeners[evt].remove(l)
 
-    def _markDirty(self, prop):
-        pass
+    def _sendEvent(self, evt, oldValue, newValue):
+        try:
+            lsts = self._listeners[evt]
+        except KeyError:
+            return
 
-    def _update(self, prop):
-        pass
+        for listener in lsts:
+            listener(evt, oldValue, newValue)
+
+    def _setParent(self, p):
+        if p != self._parent:
+            if self._parent is not None:
+                self._parent._removeChild(self)
+            self._parent = p
+            if self._parent is not None:
+                self._parent._addChild(self)
+            self._updateInheritAll()
+            return True
+        return False
+
+    def _update(self, pname):
+        if self.getProperty(pname)._update():
+            for c in self._children:
+                c._updateInherit(pname, prop.value)
+
+    def _updateInherit(self, pname, pvalue):
+        try:
+            prop = self._props[pname]
+            if not prop._updateInherit(pvalue):
+                return
+            value = prop.value
+        except KeyError:
+            value = pvalue
+
+        for c in self._children:
+            c._updateInherit(pname, value)
+
+    def _updateInheritAll(self):
+        if self._parent:
+            for nm in self._parent._props:
+                self._updateInherit(nm, self._parent[nm])
+                
+        for nm in self._props:
+            if not self._parent or nm not in self._parent._props:
+                self._updateInherit(nm, None)
 
 class Component(PropertySet):
     def __init__(self, id = '', parent = None):
         super(Component, self).__init__(id, parent)
+
+        self._context = None
+        self._pangoContext = None
 
         self.addProperty('width', 0, float)
         self.addProperty('height', 0, float)
@@ -167,21 +208,20 @@ class Component(PropertySet):
 
     def computeSize(self):
         # DO NOT override
-        ret = Vec2(*self._computeContentSize())
-
-        margin = self['margin']
-        padding = self['padding']
-        border = self['border']
-        return ret + margin[:2] + margin[2:] + padding[:2] + padding[2:] + border[:2] + border[2:]        
+        csize = self._computeContentSize()
+        space = [self['margin'], self['padding'], self['border']]
+        space = [(s[:2], s[2:]) for s in space]
+        s0, s1 = zip(*space)
+        xspace, yspace = zip(*(s0 + s1))
+        return csize[0] + sum(xspace), csize[1] + sum(yspace)
 
     def render(self, size):
         # DO NOT override
-        global context
         margin = self['margin']
         padding = self['padding']
         border = self['border']
 
-        ctx = context
+        ctx = self._context
         ctx.save()
         ctx.rectangle(0, 0, *size)
         ctx.clip()
@@ -217,6 +257,12 @@ class Component(PropertySet):
         # subclass should override
         return (0, 0)
 
+    def _updateContext(self, ctx, pangoCtx):
+        self._context = ctx
+        self._pangoContext = pangoCtx
+        for c in self._children:
+            c._updateContext(ctx, pangoCtx)
+
     def _invalidateSize(self):
         if self._sizeValid and self.parent is not None:
             self._sizeValid = False
@@ -226,6 +272,13 @@ class Component(PropertySet):
         # subclass should override
         pass
 
+    def _setParent(self, p):
+        if super(Component, self)._setParent(p):
+            if p:
+                self._updateContext(p._context, p._pangoContext)
+            else:
+                self._updateContext(None, None)
+
     def _updateLayout(self, size):
         # subclass should override
         pass
@@ -233,7 +286,6 @@ class Component(PropertySet):
 class Container(Component):
     def __init__(self, id = '', parent = None):
         super(Container, self).__init__(id, parent)
-        self._children = list()
 
     def addChild(self, c):
         c.parent = self
@@ -249,11 +301,21 @@ class Container(Component):
         self._children.remove(c)
         self._invalidateSize()
 
+    def _renderContent(self, size):
+        ctx = self._context
+        for c in self._children:
+            ctx.save()
+            ctx.translate(*c.position)
+            c.render(c.size)
+            ctx.restore()
+
 class Box(Container):
     def __init__(self, id = '', parent = None):
         super(Box, self).__init__(id, parent)
         self.addProperty('orientation', 'horizontal')
         self.addProperty('spacing', 5, int)
+        self.addProperty('verticalAlign', 'center', toOrient)
+        self.addProperty('horizontalAlign', 'center', toOrient)
 
     @property
     def _idx0(self):
@@ -283,11 +345,11 @@ class Box(Container):
         return size
 
     def _updateLayout(self, size):
-        pos = 0, 0
+        pos = [0, 0]
         spacing = self['spacing']
         for c in self._children:
             c.size = c.computeSize()
-            c.position = pos
+            c.position = list(pos)
             diff = size[self._idx1] - c.size[self._idx1]
             if diff > 0:
                 c.position[self._idx1] += self._orient1 * diff
@@ -304,9 +366,12 @@ class HBox(Box):
     def __init__(self, id = '', parent = None):
         super(HBox, self).__init__(id, parent)
 
+class VBox(Box):
+    def __init__(self, id = '', parent = None):
+        super(VBox, self).__init__(id, parent)
+        self.getProperty('orientation').defaultValue = 'vertical'
+
 class Text(Component):
-    FONT_CACHE = dict()
-    
     def __init__(self, id = '', parent = None):
         super(Text, self).__init__(id, parent)
         self.addProperty('text', '', str)
@@ -320,30 +385,30 @@ class Text(Component):
         return [s / pango.SCALE for s in layout.get_size()]
 
     def _genLayout(self):
+        pctx = self._pangoContext
         if self._layout is None:
-            self._layout = pangoContext.create_layout()
+            self._layout = pctx.create_layout()
             self._layout.set_width(-1)
 
-        font = pango.FontDescription(self['fontName'])
+        font = pango.FontDescription('{0} {1}'.format(self['fontName'], self['fontSize']))
         self._layout.set_font_description(font)
 
         if self._layout.get_text() != self['text']:
             self._layout.set_text(self['text'])
-            pangoContext.update_layout(self._layout)
+            pctx.update_layout(self._layout)
             
         return self._layout
 
     def _renderContent(self, size):
-        context.set_source_rgb(1, 0, 0)
+        self._context.set_source_rgb(1, 0, 0)
         layout = self._genLayout()
-        pangoContext.show_layout(layout)
+        self._pangoContext.show_layout(layout)
 
-class VBox(Box):
-    def __init__(self, id = '', parent = None):
-        super(VBox, self).__init__(id, parent)
-        self.getProperty('orientation').defaultValue = 'vertical'
+    def _updateContext(self, context, pangoContext):
+        self._layout = None
+        super(Text, self)._updateContext(context, pangoContext)
 
-class Manager(object):
+class Manager(Box):
     def __init__(self, visible=True):
         super(Manager, self).__init__()
         
@@ -376,19 +441,15 @@ class Manager(object):
                 self._card.hide()
 
     def render(self, task):
-        global context
         size = self.resize()
-        ctx = context
+        ctx = self._context
         ctx.save()
         ctx.set_source_rgba(0, 0, 0, 0)
         ctx.set_operator(cairo.OPERATOR_SOURCE)
         ctx.paint()
         ctx.restore()
 
-        if self.content is not None:
-            ctx.save()
-            self.content.render(size)
-            ctx.restore()
+        super(Manager, self).render(self._size)
 
         self._buffer.setData(self._surface.get_data())
         self._tex.setRamImage(CPTA_uchar(self._buffer), Texture.CMOff)
@@ -412,11 +473,10 @@ class Manager(object):
         self._tex.setMinfilter(Texture.FTNearest)
         self._card.setTexture(self._tex)
 
-        # TODO: globals, ugly but quick
-        global context
-        global pangoContext
         context = cairo.Context(self._surface)
         pangoContext = pangocairo.CairoContext(context)
+        self._updateContext(context, pangoContext)
+        self._updateLayout(size)
         return size
 
 class _FakeProperty(object):
@@ -463,6 +523,12 @@ class _FakeProperty(object):
 
     def _parse(self, v):
         return _makeList(v, len(self._props))
+
+    def _update(self):
+        return False
+
+    def _updateInherit(self, pvalue):
+        return False
         
 class _Property(object):
     def __init__(self, ps, name, defaultValue, convertFn, defaultInherit):
@@ -478,7 +544,6 @@ class _Property(object):
         self._inherit = None
         
         self._computedValue = None
-        self._update()
 
     @property
     def defaultInherit(self):
@@ -526,8 +591,7 @@ class _Property(object):
         return _Property(pset, self.name, self._defaultValue, self._convertFn, self._defaultInherit)
 
     def markDirty(self):
-        self._pset._markDirty(self)
-        self._update()
+        self._pset._update(self.name)
 
     def _update(self):
         if self._value is not None:
@@ -538,12 +602,23 @@ class _Property(object):
             newValue = self._defaultValue
 
         try:
-            self._computedValue = newValue()
+            newValue = newValue()
         except TypeError:
-            self._computedValue = newValue
+            pass
 
         if self._convertFn is not None:
-            self._computedValue = self._convertFn(self._computedValue)
+            newValue = self._convertFn(newValue)
+
+        if newValue != self._computedValue:
+            oldValue = self._computedValue
+            self._computedValue = newValue
+            self._pset._sendEvent(self.name, oldValue, newValue)
+            return True
+        return False
+
+    def _updateInherit(self, pvalue):
+        self._inheritValue = pvalue
+        return self._update()
 
 if __name__ == '__main__':
     import direct.directbase.DirectStart
@@ -554,5 +629,5 @@ if __name__ == '__main__':
 
     txt = Text()
     txt['text'] = 'hello world'
-    mgr.content = txt
+    txt.parent = mgr
     run()
