@@ -45,7 +45,7 @@ class World(DirectObject):
   def makeStars(self, number, dist):
     starEntities = []
     for i in range(number):
-      starEntities.append(Star(dist))
+      starEntities.append(Star(dist,i))
     return starEntities
     
   def initCamera(self):
@@ -129,15 +129,13 @@ class World(DirectObject):
     self.nx -= 0.5
 
 class Star(DirectObject):
-  def __init__(self, dist):
-    self.stars = render.attachNewNode("starnode")
+  def __init__(self, dist, i):
     self.pos = (random() * dist, random() * dist, random() * dist)
     self.model = loader.loadModel("models/square")
-    self.model.reparentTo(self.stars)
     self.model.setPos(starPos(dist))
     self.model.setColor(WHITE)
     self.model.find("**/polygon").node().setIntoCollideMask(BitMask32.bit(1))
-    self.model.find("**/polygon").node().setTag('star', str(1))
+    self.model.find("**/polygon").node().setTag('star', str(i))
     t1 = loader.loadTexture("sprites/star1.png")
     t2 = TextureStage("sprites/star1.png")
     self.model.setTexture(t2, t1)	

@@ -161,7 +161,7 @@ class World(DirectObject):
       self.targetStack[len(self.targetStack)-1].append(self.shipselected) 
   
   def makeStars(self, number, dist):
-    self.stars = render.attachNewNode("starnode")
+
     self.starEntities = [None for i in range(number)]
     for i in range(number):
       #Load, parent, color, and position the model (a single square polygon)
