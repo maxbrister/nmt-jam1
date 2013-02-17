@@ -65,11 +65,11 @@ class World(DirectObject):
     base.setBackgroundColor(0.0, 0.0, 0.0)
 
 	#make some stars
-    starIndex = self.makeStars(10, 5)
+    starIndex = self.makeStars(10, 15)
 	
 	#make some ships (this is a test function, and should be replaced by our real ship-spawning code ASAP)
-    self.selected = starIndex = self.testShips(5, 2)
-
+    self.starIndex = self.testShips(5, 2)
+    self.selected = self.starIndex[0:2]
     #This will represent the index of the currently highlited square
     self.hiSq = False
 
@@ -107,40 +107,51 @@ class World(DirectObject):
     return Task.cont
 
   def mouseTask(self, task):
-    #This task deals with the highlighting and dragging based on the mouse
-    
-    #First, clear the current highlight
     if self.hiSq is not False:
       self.starEntities[self.hiSq].setColor(WHITE)
       self.hiSq = False
       
+	  #define some temp variables
+    i = None
+    j = None
+	  
     #Check to see if we can access the mouse. We need it to do anything else
     if base.mouseWatcherNode.hasMouse():
       #get the mouse position
       mpos = base.mouseWatcherNode.getMouse()
-      
       #Set the position of the ray based on the mouse position
       self.pickerRay.setFromLens(base.camNode, mpos.getX(), mpos.getY())
-      
-      #Do the actual collision pass (Do it only on the starEntities for
-      #efficiency purposes)
       self.picker.traverse(self.stars)
       if self.pq.getNumEntries() > 0:
-        #if we have hit something, sort the hits so that the closest
-        #is first, and highlight that node
         self.pq.sortEntries()
-        i = int(self.pq.getEntry(0).getIntoNode().getTag('square'))
+        try:
+          i = int(self.pq.getEntry(0).getIntoNode().getTag('star'))
+          print i
+        except:
+          i = None
+        try:
+          j = int(self.pq.getEntry(0).getIntoNode().getTag('ship'))
+        except:
+          j = None
         #Set the highlight on the picked square
-        self.starEntities[i].setColor(HIGHLIGHT)
-        self.hiSq = i
-        self.highlighted = (self.starEntities[i].getX(), self.starEntities[i].getY(), self.starEntities[i].getZ())
+        if i: self.starEntities[i].setColor(HIGHLIGHT)
+        if j: self.shipEntities[j].setColor(HIGHLIGHT)
+        if i: self.hiSq = i
+        if i: self.highlighted = (self.starEntities[i].getX(), self.starEntities[i].getY(), self.starEntities[i].getZ())
+        if j: self.shipselected = self.shipEntities[j]
 	
 	#allow the user to input a destination
-    self.accept("mouse1", self.updateTarget)
-		
+    if i: self.accept("mouse1", self.updateTarget)
+    if j: self.accept("mouse1", self.updateSelection)
     return Task.cont
+	
   def updateTarget(self):
     self.target = self.highlighted
+	
+  def updateSelection(self):
+    print "current item = ", self.selected
+    if self.shipselected: self.selected.append(self.shipselected)
+
   
   def makeStars(self, number, dist):
     self.stars = render.attachNewNode("starnode")
@@ -152,7 +163,7 @@ class World(DirectObject):
       self.starEntities[i].setPos(starPos(dist))
       self.starEntities[i].setColor(WHITE)
       self.starEntities[i].find("**/polygon").node().setIntoCollideMask(BitMask32.bit(1))
-      self.starEntities[i].find("**/polygon").node().setTag('square', str(i))
+      self.starEntities[i].find("**/polygon").node().setTag('star', str(i))
       t1 = loader.loadTexture("sprites/star1.png")
       t2 = TextureStage("sprites/star1.png")
       self.starEntities[i].setTexture(t2, t1)	
@@ -170,7 +181,7 @@ class World(DirectObject):
       self.shipEntities[i].setPos(starPos(dist))
       self.shipEntities[i].setColor(WHITE)
       self.shipEntities[i].find("**/polygon").node().setIntoCollideMask(BitMask32.bit(1))
-      self.shipEntities[i].find("**/polygon").node().setTag('square', str(i))
+      self.shipEntities[i].find("**/polygon").node().setTag('ship', str(i))
       t1 = loader.loadTexture("sprites/progart.png")
       t2 = TextureStage("sprites/star1.png")
       self.shipEntities[i].setTexture(t2, t1)
@@ -179,24 +190,23 @@ class World(DirectObject):
     return self.shipEntities
 
   def moveShipsTask(self, task):
+
     for i, ship in enumerate(self.selected):
-      x = ship.getX()
-      y = ship.getY()
-      z = ship.getZ()
-      nx = self.target[0] + i/10.0
-      ny = self.target[1] 
-      nz = self.target[2]
+      if ship:  
+        x = ship.getX()
+        y = ship.getY()
+        z = ship.getZ()
+        nx = self.target[0] + i/10.0
+        ny = self.target[1] 
+        nz = self.target[2]
 	  
-      print nx, ny, nz
-      print x, y, z
-	  
-      if x > nx: x -= 0.1
-      if x < nx: x += 0.1	 
-      if y > ny: y -= 0.1
-      if y < ny: y += 0.1
-      if z > nz: z -= 0.1
-      if z < nz: z += 0.1	  
-      ship.setPos(x,y,z)
+        if x > nx: x -= 0.1
+        if x < nx: x += 0.1	 
+        if y > ny: y -= 0.1
+        if y < ny: y += 0.1
+        if z > nz: z -= 0.1
+        if z < nz: z += 0.1	  
+        ship.setPos(x,y,z)
     return Task.cont
 
 
