@@ -394,7 +394,7 @@ class Box(Container):
     def _computeContentSize(self):
         size = [0, 0]
         for c in self._children:
-            s = c.computeContentSize()
+            s = c.computeSize()
             size[self._idx0] += s[self._idx0]
             size[self._idx1] = max(size[self._idx1], s[self._idx1])
 
@@ -407,6 +407,7 @@ class Box(Container):
         spacing = self['spacing']
         for idx, c in enumerate(self._children):
             c.size = c.computeSize()
+            c._updateLayout(c.size)
             c.position = list(pos)
             diff = size[self._idx1] - c.size[self._idx1]
             if diff > 0:
@@ -428,10 +429,11 @@ class HBox(Box):
         self.types.append('HBox')
 
 class VBox(Box):
-    def __init__(self, id = ''):
+    def __init__(self, id = '', parent=None):
         super(VBox, self).__init__(id)
         self.getProperty('orientation').defaultValue = 'vertical'
         self.types.append('VBox')
+        self.parent = parent
 
 class Manager(Box):
     def __init__(self, visible=True):
@@ -605,9 +607,10 @@ class Text(Component):
         super(Text, self)._updateContext(mgr, context, pangoContext)
 
 class Button(Text):
-    def __init__(self, text = '', id = ''):
+    def __init__(self, text = '', id = '', parent=None):
         super(Button, self).__init__(text, id)
         self.types.append('Button')
+        self.parent = parent
 
     def onMouseDown(self):
         self.state = 'down'
@@ -774,9 +777,9 @@ if __name__ == '__main__':
     base.win.setClearColorActive(True)
     base.win.setClearColor(VBase4(0, 0, 0, 1))
     mgr = Manager()
-    mgr['fontColor'] = '#008000'
 
     cl = {
+        'fontColor': '#008000',
         'backgroundColor': '#000000',
         'backgroundColor#down': '#005000',
         'backgroundColor#mouseOver': '#002000',
@@ -786,6 +789,8 @@ if __name__ == '__main__':
     cl.update(rectDict('padding', 5))
     mgr.addClass(cl, 'Button')
 
-    btn = Button('Hello World!')
-    btn.parent = mgr
+    mainMenu = VBox(parent=mgr)
+    Button('New Game', parent=mainMenu)
+    Button('Options', parent=mainMenu)
+    Button('Quit', parent=mainMenu).addListener('click', lambda evt,data: exit(0))
     run()
