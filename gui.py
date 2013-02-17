@@ -491,13 +491,14 @@ class Manager(Box):
         super(Manager, self).render(self._size)
 
         self._buffer.setData(self._surface.get_data())
+        self._tex.setup2dTexture(self._size[0], self._size[1], Texture.TUnsignedByte, Texture.FRgba)
         self._tex.setRamImage(CPTA_uchar(self._buffer), Texture.CMOff)
         return True
 
     def resize(self, size=None):
         props = base.win.getProperties()
         size = props.getXSize(), props.getYSize()
-        if self._size == size and False:
+        if self._size == size:
             return size
 
         self._size = size
@@ -507,6 +508,7 @@ class Manager(Box):
         self._buffer = PTA_uchar.emptyArray(self._size[0] * self._size[1] * 4)
         
         self._tex = Texture()
+        self._tex.setKeepRamImage(True)
         self._tex.setup2dTexture(self._size[0], self._size[1], Texture.TUnsignedByte, Texture.FRgba)
         self._tex.setMagfilter(Texture.FTNearest)
         self._tex.setMinfilter(Texture.FTNearest)
