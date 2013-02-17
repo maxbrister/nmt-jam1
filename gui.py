@@ -28,6 +28,11 @@ def toOrient(o):
         return .5
     return float(o)
 
+def rectDict(name, value, state=''):
+    if len(state) > 0:
+        state = '#' + state
+    return {name + d + state: value for d in ['Left', 'Top', 'Right', 'Bottom']}
+
 def _allSame(v):
     if len(v) <= 1:
         return True
@@ -135,14 +140,14 @@ class PropertySet(object):
                 return c.d[nm]
         return None
 
-    def _sendEvent(self, evt, oldValue, newValue):
+    def _sendEvent(self, evt, data):
         try:
             lsts = self._listeners[evt]
         except KeyError:
             return
 
         for listener in lsts:
-            listener(evt, oldValue, newValue)
+            listener(evt, data)
 
     def _setParent(self, p):
         if p != self._parent:
@@ -183,6 +188,7 @@ class PropertySet(object):
 
 class Component(PropertySet):
     def __init__(self, id=''):
+
         super(Component, self).__init__(id)
 
         self._context = None
@@ -226,6 +232,18 @@ class Component(PropertySet):
         s0, s1 = zip(*space)
         xspace, yspace = zip(*(s0 + s1))
         return csize[0] + sum(xspace), csize[1] + sum(yspace)
+
+    def onMouseDown(self):
+        return False
+
+    def onMouseEnter(self):
+        pass
+
+    def onMouseLeave(self):
+        pass
+
+    def onMouseUp(self):
+        return False
 
     def render(self, size):
         # DO NOT override
@@ -274,6 +292,10 @@ class Component(PropertySet):
         
         ctx.restore()
 
+    def under(self, pos):
+        # subclass should override
+        return [self]
+
     def _computeContentSize(self):
         # subclass should override
         return (0, 0)
@@ -319,6 +341,14 @@ class Container(Component):
 
     def removeChild(self, c):
         c.parent = None
+
+    def under(self, pos):
+        ret = [self]
+        for c in self._children:
+            if pos[0] >= c.position[0] and pos[1] >= c.position[1] and pos[0] <= c.position[0] + c.size[0] \
+                    and pos[1] <= c.position[1] + c.size[1]:
+                ret = c.under((pos[0] - c.position[0], pos[1] - c.position[1])) + ret
+        return ret
 
     def _addChild(self, c):
         self._children.append(c)
@@ -420,6 +450,11 @@ class Manager(Box):
         self.content = None
         self.clist = list()
 
+        self._mouseOver = list()
+ 
+        base.accept('mouse1', self._handleMouseDown)
+        base.accept('mouse1-up', self._handleMouseUp)
+
     @property
     def visible(self):
         return self._visible
@@ -440,6 +475,8 @@ class Manager(Box):
         self.clist.append(PropClass(d, s))
 
     def render(self, task):
+        self._updateMouse()
+        
         size = self.resize()
         ctx = self._context
         ctx.save()
@@ -458,7 +495,7 @@ class Manager(Box):
     def resize(self, size=None):
         props = base.win.getProperties()
         size = props.getXSize(), props.getYSize()
-        if self._size == size:
+        if self._size == size and False:
             return size
 
         self._size = size
@@ -478,6 +515,38 @@ class Manager(Box):
         self._updateContext(self, context, pangoContext)
         self._updateLayout(size)
         return size
+
+    def _handleMouseDown(self):
+        for comp in self._mouseOver:
+            if comp.onMouseDown():
+                break
+
+    def _handleMouseUp(self):
+        for comp in self._mouseOver:
+            if comp.onMouseUp():
+                break
+
+    def _updateMouse(self):
+        mwn = base.mouseWatcherNode
+        if mwn.hasMouse():
+            pos = Vec2(mwn.getMouseX(), mwn.getMouseY())
+            pos += 1
+            pos /= 2
+            pos.y = 1 - pos.y
+            pos = [int(p * s) for p, s in zip(pos, self._size)]
+            mouseOver = self.under(tuple(pos))
+        else:
+            mouseOver = list()
+            
+        mouseLeave = [comp for comp in self._mouseOver if comp not in mouseOver]
+        mouseEnter = [comp for comp in mouseOver if comp not in self._mouseOver]
+        self._mouseOver = mouseOver
+
+        for comp in mouseLeave:
+            comp.onMouseLeave()
+            
+        for comp in mouseEnter:
+            comp.onMouseEnter()
 
 class PropClass(object):
     def __init__(self, d, s=''):
@@ -538,6 +607,21 @@ class Text(Component):
 class Button(Text):
     def __init__(self, text = '', id = ''):
         super(Button, self).__init__(text, id)
+        self.types.append('Button')
+
+    def onMouseDown(self):
+        self.state = 'down'
+
+    def onMouseEnter(self):
+        self.state = 'mouseOver'
+
+    def onMouseLeave(self):
+        self.state = ''
+
+    def onMouseUp(self):
+        if self.state == 'down':
+            self.state = ''
+            self._sendEvent('click', None)
 
 class _FakeProperty(object):
     def __init__(self, ps, name, props):
@@ -654,7 +738,7 @@ class _Property(object):
     def markDirty(self):
         self._pset._update(self.name)
 
-    def _update(self):
+    def _update(self):            
         if self._value is not None:
             newValue = self._value
         elif self._classValue is not None:
@@ -675,7 +759,7 @@ class _Property(object):
         if newValue != self._computedValue:
             oldValue = self._computedValue
             self._computedValue = newValue
-            self._pset._sendEvent(self.name, oldValue, newValue)
+            self._pset._sendEvent(self.name, (oldValue, newValue))
             return True
         return False
 
@@ -692,12 +776,16 @@ if __name__ == '__main__':
     mgr = Manager()
     mgr['fontColor'] = '#008000'
 
-    mgr.addClass({
-            'backgroundColor': '#000000',
-            'padding': 5,
-            'borderColor': '#008000',
-            }, 'Text')
+    cl = {
+        'backgroundColor': '#000000',
+        'backgroundColor#down': '#005000',
+        'backgroundColor#mouseOver': '#002000',
+        'borderColor': '#008000'
+        }
+    cl.update(rectDict('border', 2))
+    cl.update(rectDict('padding', 5))
+    mgr.addClass(cl, 'Button')
 
-    txt = Text('Hello World!')
-    txt.parent = mgr
+    btn = Button('Hello World!')
+    btn.parent = mgr
     run()
