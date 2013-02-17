@@ -39,7 +39,7 @@ class World(DirectObject):
     self.nx = 0.0
     self.ny = 0.0
 	
-	#define a current target position
+	#define a stack of groups and targets
     self.target = (0,0,0)
 
 	#initialize a camera
@@ -69,7 +69,7 @@ class World(DirectObject):
 	
 	#make some ships (this is a test function, and should be replaced by our real ship-spawning code ASAP)
     self.starIndex = self.testShips(5, 2)
-    self.selected = self.starIndex[0:2]
+    self.selected = []
     #This will represent the index of the currently highlited square
     self.hiSq = False
 
@@ -143,14 +143,20 @@ class World(DirectObject):
 	#allow the user to input a destination
     if i: self.accept("mouse1", self.updateTarget)
     if j: self.accept("mouse1", self.updateSelection)
+    if j: self.accept("x", self.clearSelection)	
     return Task.cont
 	
   def updateTarget(self):
     self.target = self.highlighted
+
+  def clearSelection(self):
+    self.selected = []
 	
   def updateSelection(self):
     print "current item = ", self.selected
-    if self.shipselected: self.selected.append(self.shipselected)
+    if self.shipselected:
+      if self.shipselected not in self.selected:
+        self.selected.append(self.shipselected)
 
   
   def makeStars(self, number, dist):
@@ -208,6 +214,7 @@ class World(DirectObject):
         if z < nz: z += 0.1	  
         ship.setPos(x,y,z)
     return Task.cont
+	
 
 
 	
