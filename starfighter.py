@@ -69,7 +69,11 @@ class World(DirectObject):
 	
 	#make some ships (this is a test function, and should be replaced by our real ship-spawning code ASAP)
     self.starIndex = self.testShips(5, 2)
-    self.selected = []
+    
+	#initialize a movement stack
+    self.targetStack = []
+    self.targetStack.append( [ (0,0,0) ] )
+	
     #This will represent the index of the currently highlited square
     self.hiSq = False
 
@@ -126,7 +130,6 @@ class World(DirectObject):
         self.pq.sortEntries()
         try:
           i = int(self.pq.getEntry(0).getIntoNode().getTag('star'))
-          print i
         except:
           i = None
         try:
@@ -136,6 +139,7 @@ class World(DirectObject):
         #Set the highlight on the picked square
         if i: self.starEntities[i].setColor(HIGHLIGHT)
         if j: self.shipEntities[j].setColor(HIGHLIGHT)
+        if j: print j		
         if i: self.hiSq = i
         if i: self.highlighted = (self.starEntities[i].getX(), self.starEntities[i].getY(), self.starEntities[i].getZ())
         if j: self.shipselected = self.shipEntities[j]
@@ -145,19 +149,16 @@ class World(DirectObject):
     if j: self.accept("mouse1", self.updateSelection)
     if j: self.accept("x", self.clearSelection)	
     return Task.cont
-	
+
   def updateTarget(self):
-    self.target = self.highlighted
+      self.targetStack.append([self.highlighted])  
 
   def clearSelection(self):
     self.selected = []
 	
   def updateSelection(self):
-    print "current item = ", self.selected
-    if self.shipselected:
-      if self.shipselected not in self.selected:
-        self.selected.append(self.shipselected)
-
+    if self.shipselected: 
+      self.targetStack[len(self.targetStack)-1].append(self.shipselected) 
   
   def makeStars(self, number, dist):
     self.stars = render.attachNewNode("starnode")
@@ -196,7 +197,30 @@ class World(DirectObject):
     return self.shipEntities
 
   def moveShipsTask(self, task):
-
+    for e, entry in enumerate(self.targetStack):
+      coords = entry[0]
+      items = entry[1:]
+      for i, item in enumerate(items):
+        print item
+        x = item.getX()
+        y = item.getY()
+        z = item.getZ()
+        nx = self.coords[0] + i/10.0
+        ny = self.coords[1] + e/10
+        nz = self.coords[2]
+		
+		#if you reach your destination stop trying to go places
+        if (x,y,z) == (nx,ny,nz): self.targetStack.remove(entry)
+	  
+        if x > nx: x -= 0.1
+        if x < nx: x += 0.1	 
+        if y > ny: y -= 0.1
+        if y < ny: y += 0.1
+        if z > nz: z -= 0.1
+        if z < nz: z += 0.1	  
+        ship.setPos(x,y,z)
+		
+def doesNotRun(self, task):	
     for i, ship in enumerate(self.selected):
       if ship:  
         x = ship.getX()
